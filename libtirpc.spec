@@ -48,6 +48,10 @@ Patch007: libtirpc-0.2.1-debug.patch
 Patch008: libtirpc-0.2.1-svcvccreate-memleak.patch
 Patch009: libtirpc-0.2.1-svctlicreate-memleak.patch
 Patch010: libtirpc-0.2.1-svcvcdodestory-memleak.patch
+#
+# 6.8-z
+#
+Patch011: libtirpc-0.2.1-clntvccreate-multithread.patch
 
 %description devel
 This package includes header files and libraries necessary for
@@ -74,6 +78,8 @@ developing programs which use the tirpc library.
 %patch009	-p1
 # 1276856 - __svc_vc_dodestroy: close memory leak
 %patch010	-p1
+# 1375529 - Threads specifically interacting with libtirpc library...
+%patch011	-p1
 
 # Remove .orig files
 find . -name "*.orig" | xargs rm -f
@@ -160,6 +166,9 @@ rm -rf %{buildroot}
 %{_mandir}/*/*
 
 %changelog
+* Tue Sep 13 2016 Steve Dickson  <steved@redhat.com> 0.2.1-11_8
+- clnt_vc_create: Do not hold a global mutex during connect (bz 1375529)
+
 * Fri Nov 13 2015 Steve Dickson  <steved@redhat.com> 0.2.1-11
 - Backported upstream debugging (bz 1273158)
 - Fixed memory leak in svc_vc_create (bz 1276687)
