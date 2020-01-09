@@ -2,7 +2,7 @@
 
 Name:		   libtirpc
 Version:		0.2.1
-Release:		11%{?dist}
+Release:		13%{?dist}
 Summary:		Transport Independent RPC Library
 Group:		  	System Environment/Libraries
 License:		SISSL and BSD
@@ -49,9 +49,10 @@ Patch008: libtirpc-0.2.1-svcvccreate-memleak.patch
 Patch009: libtirpc-0.2.1-svctlicreate-memleak.patch
 Patch010: libtirpc-0.2.1-svcvcdodestory-memleak.patch
 #
-# 6.8-z
+# 6.9
 #
 Patch011: libtirpc-0.2.1-clntvccreate-multithread.patch
+Patch012: libtirpc-0.2.1-taddr2uaddr-memleak.patch
 
 %description devel
 This package includes header files and libraries necessary for
@@ -78,8 +79,10 @@ developing programs which use the tirpc library.
 %patch009	-p1
 # 1276856 - __svc_vc_dodestroy: close memory leak
 %patch010	-p1
-# 1375529 - Threads specifically interacting with libtirpc library...
+# 1332520 - Threads specifically interacting with libtirpc library...
 %patch011	-p1
+# 1285144 - rpcbind leak memory in init_transport()
+%patch012	-p1
 
 # Remove .orig files
 find . -name "*.orig" | xargs rm -f
@@ -166,8 +169,11 @@ rm -rf %{buildroot}
 %{_mandir}/*/*
 
 %changelog
-* Tue Sep 13 2016 Steve Dickson  <steved@redhat.com> 0.2.1-11_8
-- clnt_vc_create: Do not hold a global mutex during connect (bz 1375529)
+* Wed Dec  7 2016 Steve Dickson  <steved@redhat.com> 0.2.1-13
+- tirpc: fix taddr2uaddr for AF_LOCAL (bz 1285144)
+
+* Mon Jun 27 2016 Steve Dickson  <steved@redhat.com> 0.2.1-12
+- clnt_vc_create: Do not hold a global mutex during connect (bz 1332520)
 
 * Fri Nov 13 2015 Steve Dickson  <steved@redhat.com> 0.2.1-11
 - Backported upstream debugging (bz 1273158)
