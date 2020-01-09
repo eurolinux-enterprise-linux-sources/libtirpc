@@ -53,6 +53,10 @@ Patch010: libtirpc-0.2.1-svcvcdodestory-memleak.patch
 #
 Patch011: libtirpc-0.2.1-clntvccreate-multithread.patch
 Patch012: libtirpc-0.2.1-taddr2uaddr-memleak.patch
+#
+# 6.10
+#
+Patch013: libtirpc-0.2.1-CVE-2017-8779.patch
 
 %description devel
 This package includes header files and libraries necessary for
@@ -83,6 +87,8 @@ developing programs which use the tirpc library.
 %patch011	-p1
 # 1285144 - rpcbind leak memory in init_transport()
 %patch012	-p1
+# 1449458 - CVE-2017-8779 libtirpc: libtirpc, libntirpc: Memory leak...
+%patch013	-p1
 
 # Remove .orig files
 find . -name "*.orig" | xargs rm -f
@@ -169,6 +175,9 @@ rm -rf %{buildroot}
 %{_mandir}/*/*
 
 %changelog
+* Wed May 17 2017 Steve Dickson  <steved@redhat.com> 0.2.1-13_9
+- Fix for CVE-2017-8779 (bz 1449458)
+
 * Wed Dec  7 2016 Steve Dickson  <steved@redhat.com> 0.2.1-13
 - tirpc: fix taddr2uaddr for AF_LOCAL (bz 1285144)
 
