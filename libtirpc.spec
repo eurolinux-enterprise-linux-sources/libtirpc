@@ -2,7 +2,7 @@
 
 Name:		   libtirpc
 Version:		0.2.1
-Release:		13%{?dist}
+Release:		15%{?dist}
 Summary:		Transport Independent RPC Library
 Group:		  	System Environment/Libraries
 License:		SISSL and BSD
@@ -57,6 +57,7 @@ Patch012: libtirpc-0.2.1-taddr2uaddr-memleak.patch
 # 6.10
 #
 Patch013: libtirpc-0.2.1-CVE-2017-8779.patch
+Patch014: libtirpc-0.2.1-nonblocking-mode.patch
 
 %description devel
 This package includes header files and libraries necessary for
@@ -87,8 +88,10 @@ developing programs which use the tirpc library.
 %patch011	-p1
 # 1285144 - rpcbind leak memory in init_transport()
 %patch012	-p1
-# 1449458 - CVE-2017-8779 libtirpc: libtirpc, libntirpc: Memory leak...
+# 1449460 - CVE-2017-8779 libtirpc: libtirpc, libntirpc: Memory leak...
 %patch013	-p1
+# 1475960 - 'showmount -e' reports 'rpc mount export: RPC: Can't decode result'
+%patch014	-p1
 
 # Remove .orig files
 find . -name "*.orig" | xargs rm -f
@@ -175,8 +178,11 @@ rm -rf %{buildroot}
 %{_mandir}/*/*
 
 %changelog
-* Wed May 17 2017 Steve Dickson  <steved@redhat.com> 0.2.1-13_9
-- Fix for CVE-2017-8779 (bz 1449458)
+* Fri Nov 10 2017 Steve Dickson  <steved@redhat.com> 0.2.1-15
+- write_vc: fix write retry loop for nonblocking mode (bz 1475960)
+
+* Wed May 17 2017 Steve Dickson  <steved@redhat.com> 0.2.1-14
+- Fix for CVE-2017-8779 (bz 1449460)
 
 * Wed Dec  7 2016 Steve Dickson  <steved@redhat.com> 0.2.1-13
 - tirpc: fix taddr2uaddr for AF_LOCAL (bz 1285144)
