@@ -33,6 +33,11 @@ Patch005: libtirpc-0.2.4-svc_vc_create-memleak.patch
 Patch006: libtirpc-0.2.4-svc-gss-memleaks.patch
 Patch007: libtirpc-0.2.4-clnt-mthr-create.patch
 
+#
+# RHEL7.3-Z
+#
+Patch008: libtirpc-0.2.4-CVE-2017-8779.patch
+
 %description
 This package contains SunLib's implementation of transport-independent
 RPC (TI-RPC) documentation.  This library forms a piece of the base of 
@@ -72,6 +77,8 @@ developing programs which use the tirpc library.
 %patch006 -p1
 # 1342545 - Threads specifically interacting with libtirpc library...
 %patch007 -p1
+# 1449462 - CVE-2017-8779 rpcbind: libtirpc, libntirpc: Memory leak...
+%patch008 -p1
 
 # Remove .orig files
 find . -name "*.orig" | xargs rm -f
@@ -160,6 +167,9 @@ rm -rf %{buildroot}
 %{_mandir}/*/*
 
 %changelog
+* Wed May 17 2017 Steve Dickson <steved@redhat.com> 0.2.4-0.8_3
+- Fixed for CVE-2017-8779 (bz 1449462)
+
 * Mon Jun  6 2016 Steve Dickson <steved@redhat.com> 0.2.4-0.8
 - handle concurrent connect calls in clnt_vc_create() (bz 1342545)
 
