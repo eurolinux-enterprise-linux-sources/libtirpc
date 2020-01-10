@@ -2,7 +2,7 @@
 
 Name:		   libtirpc
 Version:		0.2.4
-Release:		0.8%{?dist}
+Release:		0.10%{?dist}
 Summary:		Transport Independent RPC Library
 Group:		  	System Environment/Libraries
 License:		SISSL and BSD
@@ -34,9 +34,10 @@ Patch006: libtirpc-0.2.4-svc-gss-memleaks.patch
 Patch007: libtirpc-0.2.4-clnt-mthr-create.patch
 
 #
-# RHEL7.3-Z
+# RHEL7.4
 #
-Patch008: libtirpc-0.2.4-CVE-2017-8779.patch
+Patch008: libtirpc-0.2.4-makefd_xprt-fd.patch
+Patch009: libtirpc-0.2.4-CVE-2017-8779.patch
 
 %description
 This package contains SunLib's implementation of transport-independent
@@ -77,8 +78,10 @@ developing programs which use the tirpc library.
 %patch006 -p1
 # 1342545 - Threads specifically interacting with libtirpc library...
 %patch007 -p1
-# 1449462 - CVE-2017-8779 rpcbind: libtirpc, libntirpc: Memory leak...
+# 1410617 - makefd_xprt: remove obsolete check for fd number 
 %patch008 -p1
+#  CVE-2017-8779 libtirpc: libtirpc, libntirpc: Memory leak....
+%patch009 -p1
 
 # Remove .orig files
 find . -name "*.orig" | xargs rm -f
@@ -167,8 +170,11 @@ rm -rf %{buildroot}
 %{_mandir}/*/*
 
 %changelog
-* Wed May 17 2017 Steve Dickson <steved@redhat.com> 0.2.4-0.8_3
-- Fixed for CVE-2017-8779 (bz 1449462)
+* Wed May 17 2017 Steve Dickson <steved@redhat.com> 0.2.4-0.10
+- Fix for CVE-2017-8779 (bz 1449463)
+
+* Sat Feb 25 2017 Steve Dickson <steved@redhat.com> 0.2.4-0.9
+-  makefd_xprt: remove obsolete check for fd number (bz 1410617)
 
 * Mon Jun  6 2016 Steve Dickson <steved@redhat.com> 0.2.4-0.8
 - handle concurrent connect calls in clnt_vc_create() (bz 1342545)
