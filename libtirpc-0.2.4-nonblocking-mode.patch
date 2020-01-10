@@ -1,0 +1,57 @@
+commit a4fa582908b9c63957240cb0cb68b59d56244ef5
+Author: Bodo Stroesser <bstroesser@ts.fujitsu.com>
+Date:   Thu Nov 6 13:26:00 2014 -0500
+
+    write_vc: fix write retry loop for nonblocking mode
+    
+    This is a simple fix for the write retry loop that is used on
+    non-blocking connections if write() failed with -EAGAIN.
+    
+    Additionally it removes a redundant if () {}
+    
+    Erroneously at each cycle of the loop the length of the data
+    to send is incremented and the buffer pointer is decremented.
+    Thus, it might happen that:
+    * the application crashes
+    * data from the memory before the buffer is sent
+    
+    Signed-off-by: Bodo Stroesser <bstroesser@ts.fujitsu.com>
+    Signed-off-by: Steve Dickson <steved@redhat.com>
+
+diff --git a/src/svc_vc.c b/src/svc_vc.c
+index 4c70de8..4d3ea51 100644
+--- a/src/svc_vc.c
++++ b/src/svc_vc.c
+@@ -559,20 +559,19 @@ write_vc(xprtp, buf, len)
+ 				cd->strm_stat = XPRT_DIED;
+ 				return (-1);
+ 			}
+-			if (cd->nonblock && i != cnt) {
+-				/*
+-				 * For non-blocking connections, do not
+-				 * take more than 2 seconds writing the
+-				 * data out.
+-				 *
+-				 * XXX 2 is an arbitrary amount.
+-				 */
+-				gettimeofday(&tv1, NULL);
+-				if (tv1.tv_sec - tv0.tv_sec >= 2) {
+-					cd->strm_stat = XPRT_DIED;
+-					return (-1);
+-				}
++			/*
++			 * For non-blocking connections, do not
++			 * take more than 2 seconds writing the
++			 * data out.
++			 *
++			 * XXX 2 is an arbitrary amount.
++			 */
++			gettimeofday(&tv1, NULL);
++			if (tv1.tv_sec - tv0.tv_sec >= 2) {
++				cd->strm_stat = XPRT_DIED;
++				return (-1);
+ 			}
++			i = 0; /* Don't change buf and cnt */
+ 		}
+ 	}
+ 

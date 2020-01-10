@@ -1,0 +1,364 @@
+diff --git a/src/svc.c b/src/svc.c
+index 08cd6c9..8afd15d 100644
+--- a/src/svc.c
++++ b/src/svc.c
+@@ -649,6 +649,7 @@ svc_getreq_common (fd)
+     {
+       if (SVC_RECV (xprt, &msg))
+ 	{
++	  bool_t no_dispatch;
+ 
+ 	  /* now find the exported program and call it */
+ 	  struct svc_callout *s;
+@@ -660,11 +661,14 @@ svc_getreq_common (fd)
+ 	  r.rq_proc = msg.rm_call.cb_proc;
+ 	  r.rq_cred = msg.rm_call.cb_cred;
+ 	  /* first authenticate the message */
+-	  if ((why = _authenticate (&r, &msg)) != AUTH_OK)
++	  why = _gss_authenticate(&r, &msg, &no_dispatch);
++	  if (why != AUTH_OK)
+ 	    {
+ 	      svcerr_auth (xprt, why);
+ 	      goto call_done;
+ 	    }
++	  if (no_dispatch)
++	    goto call_done;
+ 	  /* now match message with a registered service */
+ 	  prog_found = FALSE;
+ 	  low_vers = (rpcvers_t) - 1L;
+diff --git a/src/svc_auth.c b/src/svc_auth.c
+index e80d5f9..31241c9 100644
+--- a/src/svc_auth.c
++++ b/src/svc_auth.c
+@@ -82,9 +82,10 @@ static struct authsvc *Auths = NULL;
+  * invalid.
+  */
+ enum auth_stat
+-_authenticate(rqst, msg)
++_gss_authenticate(rqst, msg, no_dispatch)
+ 	struct svc_req *rqst;
+ 	struct rpc_msg *msg;
++	bool_t *no_dispatch;
+ {
+ 	int cred_flavor;
+ 	struct authsvc *asp;
+@@ -97,6 +98,7 @@ _authenticate(rqst, msg)
+ 	rqst->rq_xprt->xp_verf.oa_flavor = _null_auth.oa_flavor;
+ 	rqst->rq_xprt->xp_verf.oa_length = 0;
+ 	cred_flavor = rqst->rq_cred.oa_flavor;
++	*no_dispatch = FALSE;
+ 	switch (cred_flavor) {
+ 	case AUTH_NONE:
+ 		dummy = _svcauth_none(rqst, msg);
+@@ -112,6 +114,11 @@ _authenticate(rqst, msg)
+ 		dummy = _svcauth_des(rqst, msg);
+ 		return (dummy);
+ #endif
++#ifdef HAVE_RPCSEC_GSS
++	case RPCSEC_GSS:
++		dummy = _svcauth_gss(rqst, msg, no_dispatch);
++		return (dummy);
++#endif
+ 	default:
+ 		break;
+ 	}
+@@ -132,6 +139,13 @@ _authenticate(rqst, msg)
+ 	return (AUTH_REJECTEDCRED);
+ }
+ 
++enum auth_stat
++_authenticate(struct svc_req *rqst, struct rpc_msg *msg)
++{
++	bool_t no_dispatch;
++	return _gss_authenticate(rqst, msg, &no_dispatch);
++}
++
+ /*
+  *  Allow the rpc service to register new authentication types that it is
+  *  prepared to handle.  When an authentication flavor is registered,
+@@ -161,6 +175,9 @@ svc_auth_reg(cred_flavor, handler)
+ #ifdef DES_BUILTIN
+ 	    case AUTH_DES:
+ #endif
++#ifdef HAVE_RPCSEC_GSS
++	    case RPCSEC_GSS:
++#endif
+ 		/* already registered */
+ 		return (1);
+ 
+diff --git a/src/svc_auth_gss.c b/src/svc_auth_gss.c
+index 3a3c980..7376107 100644
+--- a/src/svc_auth_gss.c
++++ b/src/svc_auth_gss.c
+@@ -116,6 +116,7 @@ svcauth_gss_import_name(char *service)
+ 	gss_name_t	name;
+ 	gss_buffer_desc	namebuf;
+ 	OM_uint32	maj_stat, min_stat;
++	bool_t		result;
+ 
+ 	gss_log_debug("in svcauth_gss_import_name()");
+ 
+@@ -130,11 +131,9 @@ svcauth_gss_import_name(char *service)
+ 			maj_stat, min_stat);
+ 		return (FALSE);
+ 	}
+-	if (svcauth_gss_set_svc_name(name) != TRUE) {
+-		gss_release_name(&min_stat, &name);
+-		return (FALSE);
+-	}
+-	return (TRUE);
++	result = svcauth_gss_set_svc_name(name);
++	gss_release_name(&min_stat, &name);
++	return result;
+ }
+ 
+ static bool_t
+@@ -211,6 +210,8 @@ svcauth_gss_accept_sec_context(struct svc_req *rqst,
+ 					      NULL,
+ 					      NULL);
+ 
++	 xdr_free((xdrproc_t)xdr_rpc_gss_init_args, (caddr_t)&recv_tok);
++
+ 	if (gr->gr_major != GSS_S_COMPLETE &&
+ 	    gr->gr_major != GSS_S_CONTINUE_NEEDED) {
+ 		gss_log_status("svcauth_gss_accept_sec_context: accept_sec_context",
+@@ -279,8 +280,11 @@ svcauth_gss_accept_sec_context(struct svc_req *rqst,
+ 			return (FALSE);
+ 
+ 		rqst->rq_xprt->xp_verf.oa_flavor = RPCSEC_GSS;
+-		rqst->rq_xprt->xp_verf.oa_base = checksum.value;
++		memcpy(rqst->rq_xprt->xp_verf.oa_base, checksum.value,
++			checksum.length);
+ 		rqst->rq_xprt->xp_verf.oa_length = checksum.length;
++
++		gss_release_buffer(&min_stat, &checksum);
+ 	}
+ 	return (TRUE);
+ }
+@@ -363,10 +367,13 @@ svcauth_gss_nextverf(struct svc_req *rqst, u_int num)
+ 			maj_stat, min_stat);
+ 		return (FALSE);
+ 	}
++
+ 	rqst->rq_xprt->xp_verf.oa_flavor = RPCSEC_GSS;
+-	rqst->rq_xprt->xp_verf.oa_base = (caddr_t)checksum.value;
++	memcpy(rqst->rq_xprt->xp_verf.oa_base, checksum.value, checksum.length);
+ 	rqst->rq_xprt->xp_verf.oa_length = (u_int)checksum.length;
+ 
++	gss_release_buffer(&min_stat, &checksum);
++
+ 	return (TRUE);
+ }
+ 
+@@ -379,8 +386,10 @@ _svcauth_gss(struct svc_req *rqst, struct rpc_msg *msg, bool_t *no_dispatch)
+ 	struct rpc_gss_cred	*gc;
+ 	struct rpc_gss_init_res	 gr;
+ 	int			 call_stat, offset;
++	enum auth_stat           result = AUTH_OK;
++	OM_uint32		 min_stat;
+ 
+-	gss_log_debug("in svcauth_gss()");
++	gss_log_debug("in _svcauth_gss()");
+ 
+ 	/* Initialize reply. */
+ 	rqst->rq_xprt->xp_verf = _null_auth;
+@@ -419,19 +428,25 @@ _svcauth_gss(struct svc_req *rqst, struct rpc_msg *msg, bool_t *no_dispatch)
+ 	XDR_DESTROY(&xdrs);
+ 
+ 	/* Check version. */
+-	if (gc->gc_v != RPCSEC_GSS_VERSION)
+-		return (AUTH_BADCRED);
++	if (gc->gc_v != RPCSEC_GSS_VERSION) {
++		result = AUTH_BADCRED;
++		goto out;
++	}
+ 
+ 	/* Check RPCSEC_GSS service. */
+ 	if (gc->gc_svc != RPCSEC_GSS_SVC_NONE &&
+ 	    gc->gc_svc != RPCSEC_GSS_SVC_INTEGRITY &&
+-	    gc->gc_svc != RPCSEC_GSS_SVC_PRIVACY)
+-		return (AUTH_BADCRED);
++	    gc->gc_svc != RPCSEC_GSS_SVC_PRIVACY) {
++		result = AUTH_BADCRED;
++		goto out;
++	}
+ 
+ 	/* Check sequence number. */
+ 	if (gd->established) {
+-		if (gc->gc_seq > MAXSEQ)
+-			return (RPCSEC_GSS_CTXPROBLEM);
++		if (gc->gc_seq > MAXSEQ) {
++			result = RPCSEC_GSS_CTXPROBLEM;
++			goto out;
++		}
+ 
+ 		if ((offset = gd->seqlast - gc->gc_seq) < 0) {
+ 			gd->seqlast = gc->gc_seq;
+@@ -441,7 +456,8 @@ _svcauth_gss(struct svc_req *rqst, struct rpc_msg *msg, bool_t *no_dispatch)
+ 		}
+ 		else if (offset >= gd->win || (gd->seqmask & (1 << offset))) {
+ 			*no_dispatch = 1;
+-			return (RPCSEC_GSS_CTXPROBLEM);
++			result = RPCSEC_GSS_CTXPROBLEM;
++			goto out;
+ 		}
+ 		gd->seq = gc->gc_seq;
+ 		gd->seqmask |= (1 << offset);
+@@ -452,35 +468,52 @@ _svcauth_gss(struct svc_req *rqst, struct rpc_msg *msg, bool_t *no_dispatch)
+ 		rqst->rq_svcname = (char *)gd->ctx;
+ 	}
+ 
++	rqst->rq_xprt->xp_verf.oa_base = msg->rm_call.cb_verf.oa_base;
++
+ 	/* Handle RPCSEC_GSS control procedure. */
+ 	switch (gc->gc_proc) {
+ 
+ 	case RPCSEC_GSS_INIT:
+ 	case RPCSEC_GSS_CONTINUE_INIT:
+-		if (rqst->rq_proc != NULLPROC)
+-			return (AUTH_FAILED);		/* XXX ? */
++		if (rqst->rq_proc != NULLPROC) {
++			result = AUTH_FAILED;
++			break;
++		}
+ 
+ 		if (_svcauth_gss_name == NULL) {
+-			if (!svcauth_gss_import_name("nfs"))
+-				return (AUTH_FAILED);
++			if (!svcauth_gss_import_name("nfs")) {
++				result = AUTH_FAILED;
++				break;
++			}
+ 		}
+ 
+-		if (!svcauth_gss_acquire_cred())
+-			return (AUTH_FAILED);
++		if (!svcauth_gss_acquire_cred()) {
++			result = AUTH_FAILED;
++			break;
++		}
+ 
+-		if (!svcauth_gss_accept_sec_context(rqst, &gr))
+-			return (AUTH_REJECTEDCRED);
++		if (!svcauth_gss_accept_sec_context(rqst, &gr)) {
++			result = AUTH_REJECTEDCRED;
++			break;
++		}
+ 
+-		if (!svcauth_gss_nextverf(rqst, htonl(gr.gr_win)))
+-			return (AUTH_FAILED);
++		if (!svcauth_gss_nextverf(rqst, htonl(gr.gr_win))) {
++			result = AUTH_FAILED;
++			break;
++		}
+ 
+ 		*no_dispatch = TRUE;
+ 
+ 		call_stat = svc_sendreply(rqst->rq_xprt, 
+ 			(xdrproc_t)xdr_rpc_gss_init_res, (caddr_t)&gr);
+ 
+-		if (!call_stat)
+-			return (AUTH_FAILED);
++		gss_release_buffer(&min_stat, &gr.gr_token);
++		free(gr.gr_ctx.value);
++
++		if (!call_stat) {
++			result = AUTH_FAILED;
++			break;
++		}
+ 
+ 		if (gr.gr_major == GSS_S_COMPLETE)
+ 			gd->established = TRUE;
+@@ -488,25 +521,36 @@ _svcauth_gss(struct svc_req *rqst, struct rpc_msg *msg, bool_t *no_dispatch)
+ 		break;
+ 
+ 	case RPCSEC_GSS_DATA:
+-		if (!svcauth_gss_validate(gd, msg))
+-			return (RPCSEC_GSS_CREDPROBLEM);
++		if (!svcauth_gss_validate(gd, msg)) {
++			result = RPCSEC_GSS_CREDPROBLEM;
++			break;
++		}
+ 
+-		if (!svcauth_gss_nextverf(rqst, htonl(gc->gc_seq)))
+-			return (AUTH_FAILED);
++		if (!svcauth_gss_nextverf(rqst, htonl(gc->gc_seq))) {
++			result = AUTH_FAILED;
++			break;
++		}
+ 		break;
+ 
+ 	case RPCSEC_GSS_DESTROY:
+-		if (rqst->rq_proc != NULLPROC)
+-			return (AUTH_FAILED);		/* XXX ? */
+-
+-		if (!svcauth_gss_validate(gd, msg))
+-			return (RPCSEC_GSS_CREDPROBLEM);
++		if (rqst->rq_proc != NULLPROC) {
++			result = AUTH_FAILED;	 /* XXX ? */
++			break;
++		}
++		if (!svcauth_gss_validate(gd, msg)) {
++			result = RPCSEC_GSS_CREDPROBLEM;
++			break;
++		}
+ 
+-		if (!svcauth_gss_nextverf(rqst, htonl(gc->gc_seq)))
+-			return (AUTH_FAILED);
++		if (!svcauth_gss_nextverf(rqst, htonl(gc->gc_seq))) {
++			result = AUTH_FAILED;
++			break;
++		}
+ 
+-		if (!svcauth_gss_release_cred())
+-			return (AUTH_FAILED);
++		if (!svcauth_gss_release_cred()) {
++			result = AUTH_FAILED;
++			break;
++		}
+ 
+ 		SVCAUTH_DESTROY(rqst->rq_xprt->xp_auth);
+ 		rqst->rq_xprt->xp_auth = &svc_auth_none;
+@@ -514,10 +558,15 @@ _svcauth_gss(struct svc_req *rqst, struct rpc_msg *msg, bool_t *no_dispatch)
+ 		break;
+ 
+ 	default:
+-		return (AUTH_REJECTEDCRED);
++		result =  AUTH_REJECTEDCRED;
+ 		break;
+ 	}
+-	return (AUTH_OK);
++out:
++	xdr_free((xdrproc_t)xdr_rpc_gss_cred, (caddr_t)gc);
++	if (result != AUTH_OK)
++		gss_log_debug("_svcauth_gss() failed: %d", result);
++
++	return result;
+ }
+ 
+ bool_t
+diff --git a/tirpc/rpc/auth.h b/tirpc/rpc/auth.h
+index 4ce11f0..7c8f813 100644
+--- a/tirpc/rpc/auth.h
++++ b/tirpc/rpc/auth.h
+@@ -399,6 +399,7 @@ struct rpc_msg;
+ enum auth_stat _svcauth_none (struct svc_req *, struct rpc_msg *);
+ enum auth_stat _svcauth_short (struct svc_req *, struct rpc_msg *);
+ enum auth_stat _svcauth_unix (struct svc_req *, struct rpc_msg *);
++enum auth_stat _svcauth_gss (struct svc_req *, struct rpc_msg *, bool_t *);
+ __END_DECLS
+ 
+ #define AUTH_NONE	0		/* no authentication */
+diff --git a/tirpc/rpc/svc_auth.h b/tirpc/rpc/svc_auth.h
+index 14269d1..723c989 100644
+--- a/tirpc/rpc/svc_auth.h
++++ b/tirpc/rpc/svc_auth.h
+@@ -66,6 +66,8 @@ typedef struct SVCAUTH {
+  * Server side authenticator
+  */
+ __BEGIN_DECLS
++extern enum auth_stat _gss_authenticate(struct svc_req *, struct rpc_msg *,
++		bool_t *);
+ extern enum auth_stat _authenticate(struct svc_req *, struct rpc_msg *);
+ extern int svc_auth_reg(int, enum auth_stat (*)(struct svc_req *,
+ 			  struct rpc_msg *));

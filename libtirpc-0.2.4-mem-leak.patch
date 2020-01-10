@@ -1,0 +1,37 @@
+diff -up libtirpc-0.2.4/src/svc_generic.c.orig libtirpc-0.2.4/src/svc_generic.c
+--- libtirpc-0.2.4/src/svc_generic.c.orig	2013-12-09 15:59:51.000000000 -0500
++++ libtirpc-0.2.4/src/svc_generic.c	2015-06-29 10:20:27.239019533 -0400
+@@ -283,6 +283,8 @@ svc_tli_create(fd, nconf, bindaddr, send
+ 	xprt->xp_type = __rpc_socktype2seman(si.si_socktype);
+ 
+ 	if (nconf) {
++		if (xprt->xp_netid != NULL)
++			free(xprt->xp_netid);
+ 		xprt->xp_netid = strdup(nconf->nc_netid);
+ 		xprt->xp_tp = strdup(nconf->nc_device);
+ 	}
+diff -up libtirpc-0.2.4/src/svc_vc.c.orig libtirpc-0.2.4/src/svc_vc.c
+--- libtirpc-0.2.4/src/svc_vc.c.orig	2015-06-29 10:19:21.205835483 -0400
++++ libtirpc-0.2.4/src/svc_vc.c	2015-06-29 10:20:34.616151809 -0400
+@@ -393,6 +393,12 @@ svc_vc_destroy(xprt)
+ 	__svc_vc_dodestroy(xprt);
+ }
+ 
++static bool_t
++__svc_rendezvous_socket(xprt)
++	SVCXPRT *xprt;
++{
++	return (xprt->xp_ops->xp_recv == rendezvous_request);
++}
+ static void
+ __svc_vc_dodestroy(xprt)
+ 	SVCXPRT *xprt;
+@@ -404,7 +410,7 @@ __svc_vc_dodestroy(xprt)
+ 
+ 	if (xprt->xp_fd != RPC_ANYFD)
+ 		(void)close(xprt->xp_fd);
+-	if (xprt->xp_port != 0) {
++	if (__svc_rendezvous_socket(xprt)) {
+ 		/* a rendezvouser socket */
+ 		r = (struct cf_rendezvous *)xprt->xp_p1;
+ 		mem_free(r, sizeof (struct cf_rendezvous));
